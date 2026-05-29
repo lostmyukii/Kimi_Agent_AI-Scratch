@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
+from backend.app.core.security import require_admin
+from backend.app.models import AuthUser
 from backend.app.schemas.event_graph import (
     EventGraphGeneratedProjectDraftCreateRequest,
     EventGraphGeneratedProjectDraftRead,
@@ -138,9 +140,11 @@ def prepare_event_graph_project_package_review(
     draft_id: str,
     payload: EventGraphProjectPackageReviewRequest,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_admin),
 ) -> EventGraphProjectPackageReviewResponse:
     try:
-        return prepare_generated_draft_for_project_package_review(db, draft_id, payload)
+        effective_payload = payload.model_copy(update={"actor": current_user.user_id})
+        return prepare_generated_draft_for_project_package_review(db, draft_id, effective_payload)
     except ValueError as exc:
         status_code = 409 if "ready_for_project_package_review" in str(exc) else 404
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc

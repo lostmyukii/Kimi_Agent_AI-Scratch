@@ -4,13 +4,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.models  # noqa: F401
 from backend.app.api.routes_event_graph import router
-from backend.app.core.database import Base
+from backend.app.core.database import Base, get_db
+from backend.app.main import app
 from backend.app.models.knowledge import KnowledgePoint
 from backend.app.models.project import Project
 from backend.app.models.project_plugin import ProjectPackage, ProjectRAGIndexJob, ProjectValidationResult
@@ -23,6 +25,11 @@ from backend.app.schemas.event_graph import (
 from backend.app.services.event_graph_generated_draft_service import create_generated_project_draft
 from backend.app.services.event_graph_package_review_service import prepare_generated_draft_for_project_package_review
 from backend.app.services.event_graph_review_service import create_project_graph_review_record
+from backend.app.services.auth_service import ensure_demo_auth_users
+
+
+TEACHER_HEADERS = {"Authorization": "Bearer dev-teacher-token"}
+ADMIN_HEADERS = {"Authorization": "Bearer dev-admin-token"}
 
 
 class EventGraphPackageReviewTest(unittest.TestCase):
@@ -32,6 +39,7 @@ class EventGraphPackageReviewTest(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=self.engine)
 
     def tearDown(self) -> None:
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
 
@@ -139,6 +147,42 @@ class EventGraphPackageReviewTest(unittest.TestCase):
     def test_package_review_route_is_registered(self) -> None:
         route_paths = {getattr(route, "path", "") for route in router.routes}
         self.assertIn("/event-graph/generated-project-drafts/{draft_id}/project-package-review", route_paths)
+
+    def test_package_review_endpoint_requires_admin_and_uses_authenticated_actor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.SessionLocal() as db:
+                ensure_demo_auth_users(db)
+                draft = self._create_draft(db, tmpdir)
+                self._seed_knowledge_points_for(db, draft.draft_payload_json["project_manifest"])
+                self._approve_for_project_package_review(db, draft.draft_id)
+                draft_id = draft.draft_id
+                package_id = draft.package_id
+
+            def override_db():
+                db = self.SessionLocal()
+                try:
+                    yield db
+                finally:
+                    db.close()
+
+            app.dependency_overrides[get_db] = override_db
+            path = f"/api/event-graph/generated-project-drafts/{draft_id}/project-package-review"
+
+            with TestClient(app) as client:
+                no_auth = client.post(path, json={"actor": "spoofed-user", "submit_for_review": True})
+                self.assertEqual(no_auth.status_code, 401)
+
+                teacher = client.post(path, headers=TEACHER_HEADERS, json={"actor": "spoofed-user", "submit_for_review": True})
+                self.assertEqual(teacher.status_code, 403)
+
+                admin = client.post(path, headers=ADMIN_HEADERS, json={"actor": "spoofed-user", "submit_for_review": True})
+                admin.raise_for_status()
+                self.assertEqual(admin.json()["package_status"], "in_review")
+
+            with self.SessionLocal() as db:
+                package = db.get(ProjectPackage, package_id)
+                self.assertEqual(package.manifest_json["event_graph_review"]["import_actor"], "ADM-001")
+                self.assertEqual(package.uploaded_by, "ADM-001")
 
 
 if __name__ == "__main__":
