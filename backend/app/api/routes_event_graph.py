@@ -12,6 +12,8 @@ from backend.app.schemas.event_graph import (
     EventGraphIdeaRequest,
     EventGraphPositioningResponse,
     EventGraphProjectDraftExportResponse,
+    EventGraphProjectPackageReviewRequest,
+    EventGraphProjectPackageReviewResponse,
     EventGraphProjectDraftRequest,
     EventGraphProjectDraftResponse,
     EventGraphReviewRecordCreateRequest,
@@ -23,6 +25,7 @@ from backend.app.services.event_graph_generated_draft_service import (
     get_generated_project_draft,
     list_generated_project_drafts,
 )
+from backend.app.services.event_graph_package_review_service import prepare_generated_draft_for_project_package_review
 from backend.app.services.event_graph_planner_service import generate_project_draft, position_teacher_idea
 from backend.app.services.event_graph_review_service import (
     create_project_graph_review_record,
@@ -125,3 +128,19 @@ def get_event_graph_review_record(
     if record.draft_id != draft_id:
         raise HTTPException(status_code=404, detail=f"审核记录不属于草案：{draft_id}")
     return record
+
+
+@router.post(
+    "/generated-project-drafts/{draft_id}/project-package-review",
+    response_model=EventGraphProjectPackageReviewResponse,
+)
+def prepare_event_graph_project_package_review(
+    draft_id: str,
+    payload: EventGraphProjectPackageReviewRequest,
+    db: Session = Depends(get_db),
+) -> EventGraphProjectPackageReviewResponse:
+    try:
+        return prepare_generated_draft_for_project_package_review(db, draft_id, payload)
+    except ValueError as exc:
+        status_code = 409 if "ready_for_project_package_review" in str(exc) else 404
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc

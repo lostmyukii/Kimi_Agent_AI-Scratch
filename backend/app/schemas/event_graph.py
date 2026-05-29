@@ -155,3 +155,21 @@ class EventGraphReviewRecordRead(ORMModel):
     draft_status_before: str
     draft_status_after: str
     created_at: datetime
+
+
+class EventGraphProjectPackageReviewRequest(BaseModel):
+    actor: str = Field(default="event_graph_planner", min_length=1)
+    submit_for_review: bool = True
+
+
+class EventGraphProjectPackageReviewResponse(BaseModel):
+    draft_id: str
+    package_id: str
+    project_id: str
+    package_status: str
+    lifecycle_stage: str
+    validation_summary: dict[str, Any] = Field(default_factory=dict)
+    validation_results: list[dict[str, Any]] = Field(default_factory=list)
+    submitted_for_review: bool
+    review_gate: dict[str, Any] = Field(default_factory=dict)
+    rag_job_count: int
