@@ -7,10 +7,13 @@ from backend.app.schemas.event_graph import (
     EventGraphIdeaRequest,
     EventGraphInsertionSlot,
     EventGraphKnowledgeChain,
+    EventGraphProjectDraftRequest,
+    EventGraphProjectDraftResponse,
     EventGraphPositioningResponse,
     EventGraphStageDecision,
     EventGraphSlotType,
 )
+from backend.app.services.project_plugin_service import REQUIRED_PACKAGE_FILES, SEVEN_DIMENSIONS
 
 
 AGE_BANDS: tuple[tuple[str, int, int], ...] = (
@@ -21,6 +24,22 @@ AGE_BANDS: tuple[tuple[str, int, int], ...] = (
     ("L5", 16, 18),
 )
 
+AGE_RANGES = {
+    "L1": "3-6",
+    "L2": "7-9",
+    "L3": "10-12",
+    "L4": "13-15",
+    "L5": "16-18",
+}
+
+AI_ASSIST_LIMITS = {
+    "L1": "0%，仅允许教师端演示和备课辅助",
+    "L2": "不超过50%",
+    "L3": "不超过30%",
+    "L4": "不超过20%",
+    "L5": "不超过10%",
+}
+
 
 def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
     normalized = text.lower()
@@ -29,6 +48,11 @@ def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
 
 def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(item for item in values if item))
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
+    return slug or "idea"
 
 
 def infer_age_band(idea: EventGraphIdeaRequest) -> str:
@@ -181,4 +205,177 @@ def position_teacher_idea(idea: EventGraphIdeaRequest) -> EventGraphPositioningR
         candidate_existing_project_keywords=candidates,
         generation_recommendation=generation_recommendation(idea, candidates, risks),
         risk_flags=risks,
+    )
+
+
+def _default_title(request: EventGraphProjectDraftRequest, positioning: EventGraphPositioningResponse) -> str:
+    if request.draft_title:
+        return request.draft_title
+    if positioning.candidate_existing_project_keywords:
+        return f"{positioning.candidate_existing_project_keywords[0]}变体项目"
+    return "事理图谱生成项目草案"
+
+
+def _difficulty_range(age_band: str) -> list[int]:
+    return {
+        "L1": [1, 3],
+        "L2": [2, 5],
+        "L3": [3, 6],
+        "L4": [5, 8],
+        "L5": [6, 10],
+    }.get(age_band, [3, 6])
+
+
+def _manifest_for_draft(
+    idea_id: str,
+    request: EventGraphProjectDraftRequest,
+    positioning: EventGraphPositioningResponse,
+    title: str,
+) -> dict:
+    age_band = positioning.stage_decision.age_band
+    project_id = f"EG-{age_band}-{_slug(idea_id).upper()}"
+    package_id = f"pkg-event-graph-{_slug(idea_id)}"
+    hardware = request.idea.available_hardware or ["待教师确认的课堂器材"]
+    target_competitions: list[str] = []
+    if age_band != "L1" and request.idea.target_use == "competition":
+        target_competitions = ["待按当年规则确认的竞赛方向"]
+
+    return {
+        "project_id": project_id,
+        "package_id": package_id,
+        "name": title,
+        "version": "0.1.0",
+        "status": "draft",
+        "lifecycle_stage": "draft",
+        "age_band": age_band,
+        "age_range": AGE_RANGES.get(age_band, "10-12"),
+        "course_series": "EVENT_GRAPH_GENERATED",
+        "course_track": ["事理图谱", positioning.stage_decision.slot_type, positioning.generation_recommendation.mode],
+        "duration_hours": request.idea.duration_hours or 8,
+        "difficulty_range": _difficulty_range(age_band),
+        "project_maturity_level": "draft",
+        "target_exams": [],
+        "target_competitions": target_competitions,
+        "recommended_exams": [],
+        "recommended_competitions": target_competitions,
+        "display_exam_tags": [],
+        "display_competition_tags": target_competitions,
+        "knowledge_point_ids": positioning.knowledge_chain.core,
+        "ai_competency_ids": [item for item in positioning.knowledge_chain.core if "AI" in item or "ai" in item.lower()],
+        "hardware_stack": hardware,
+        "software_stack": ["Scratch/图形化编程或同阶段工具", "教师确认后补齐"],
+        "evidence_outputs": ["项目草图", "调试记录", "学生讲解卡", "课堂展示材料"],
+        "zongping_categories": [] if age_band in {"L1", "L2"} else ["研究性学习", "科技创新活动"],
+        "competition_categories": target_competitions,
+        "prerequisite_project_ids": [],
+        "successor_project_ids": [],
+        "rag_indexable": False,
+        "recommendable": False,
+        "alignment_quality_status": "draft_pending_review",
+        "alignment_generated_by": "event_graph_planner",
+        "source_idea_id": idea_id,
+        "source_idea_text": request.idea.idea_text,
+        "insert_slot_type": positioning.stage_decision.slot_type,
+        "generation_mode": positioning.generation_recommendation.mode,
+        "ai_assist_limit": AI_ASSIST_LIMITS.get(age_band, "按阶段控制"),
+        "review_required": True,
+    }
+
+
+def _package_files_for_draft(
+    manifest: dict,
+    request: EventGraphProjectDraftRequest,
+    positioning: EventGraphPositioningResponse,
+) -> dict:
+    title = str(manifest["name"])
+    required_reviews = positioning.generation_recommendation.required_review
+    if "teacher_review" not in required_reviews:
+        required_reviews = ["teacher_review", *required_reviews]
+
+    return {
+        "project.json": manifest,
+        "curriculum.md": (
+            f"# {title}\n\n"
+            f"教师思路：{request.idea.idea_text}\n\n"
+            f"插入阶段：{positioning.stage_decision.slot_type}。\n\n"
+            "本草案只提供项目包骨架，必须经过教师确认和教研审核后才能进入插件审核流程。"
+        ),
+        "lesson_plan.json": {
+            "lessons": [
+                {"stage": "问题定义", "focus": "学生先描述任务、约束和成功标准。"},
+                {"stage": "方案设计", "focus": "连接前置知识、核心知识和可观察证据。"},
+                {"stage": "实现调试", "focus": "保留失败记录、调试过程和学生解释。"},
+                {"stage": "展示复盘", "focus": "形成讲解卡、家长视角和后续挑战。"},
+            ],
+            "teacher_confirmation_required": True,
+        },
+        "knowledge_map.json": {
+            "prerequisite_knowledge_point_ids": positioning.knowledge_chain.before,
+            "core_knowledge_point_ids": positioning.knowledge_chain.core,
+            "extension_knowledge_point_ids": positioning.knowledge_chain.after,
+            "candidate_existing_project_keywords": positioning.candidate_existing_project_keywords,
+        },
+        "materials.json": {
+            "hardware": manifest["hardware_stack"],
+            "software": manifest["software_stack"],
+            "safety": ["用电安全", "器材边界确认", "学生隐私保护"],
+            "to_be_confirmed": ["班级设备数量", "课时长度", "教师可接受的AI辅助比例"],
+        },
+        "assessment.json": {
+            "dimensions": [
+                {"dimension": dimension, "levels": ["待补齐", "达标", "优秀"], "evidence": "课堂作品与过程记录"}
+                for dimension in SEVEN_DIMENSIONS
+            ]
+        },
+        "ai_guardrails.json": {
+            "ai_capabilities": ["生成启发问题", "辅助教师备课", "提供调试建议"],
+            "student_obligatory_tasks": ["亲自完成问题描述", "亲自完成核心搭建/代码/调试", "亲自解释作品"],
+            "ai_output_validation": ["学生必须复述AI建议并说明取舍", "教师抽查关键步骤"],
+            "anti_cognitive_offloading": ["先学生草稿，再AI建议，再学生修改", "AI不得直接替代最终作品"],
+            "AI使用边界": [manifest["ai_assist_limit"], "不生成可直接复制的完整代码"],
+            "防认知卸载机制": ["解释门", "过程证据保留", "教师确认后再进入审核"],
+        },
+        "zongping_map.json": {
+            "categories": manifest["zongping_categories"],
+            "materials": manifest["evidence_outputs"],
+            "review_note": "综评映射需教研审核后固化。",
+        },
+        "competition_map.json": {
+            "competitions": manifest["target_competitions"],
+            "fit_basis": "L1只作为前置能力和展示项目；L2+需按当年竞赛规则复核。",
+            "risk_tips": ["不得直接包装课堂项目为竞赛项目", "不得跳过教研审核"],
+        },
+        "parent_view.md": f"{title} 会让学生围绕真实问题完成可讲、可演示、可复盘的作品。",
+        "teacher_notes.md": "\n".join(request.teacher_notes or required_reviews),
+        "README.md": "本目录由事理图谱生成项目草案产生，状态固定为 draft，需通过 ProjectPackage 审核后才能入库。",
+    }
+
+
+def generate_project_draft(idea_id: str, request: EventGraphProjectDraftRequest) -> EventGraphProjectDraftResponse:
+    positioning = position_teacher_idea(request.idea)
+    title = _default_title(request, positioning)
+    manifest = _manifest_for_draft(idea_id, request, positioning, title)
+    package_files = _package_files_for_draft(manifest, request, positioning)
+    missing_files = [filename for filename in REQUIRED_PACKAGE_FILES if filename not in package_files]
+    required_review = _unique(["teacher_review", *positioning.generation_recommendation.required_review, "project_package_validation"])
+    if "teaching_research_review" not in required_review:
+        required_review.append("teaching_research_review")
+
+    validation_preview = {
+        "can_activate": False,
+        "status_flow": ["draft", "in_review", "approved", "active"],
+        "required_review": required_review,
+        "missing_files": missing_files,
+        "risk_flags": positioning.risk_flags,
+        "reason": "项目草案必须先通过教师确认、教研审核和项目插件校验，不能直接 active。",
+    }
+
+    return EventGraphProjectDraftResponse(
+        idea_id=idea_id,
+        status="draft",
+        files=list(REQUIRED_PACKAGE_FILES.keys()),
+        positioning=positioning,
+        project_manifest=manifest,
+        package_files=package_files,
+        validation_preview=validation_preview,
     )

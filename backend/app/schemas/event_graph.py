@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -63,3 +63,19 @@ class EventGraphPositioningResponse(BaseModel):
     candidate_existing_project_keywords: list[str] = Field(default_factory=list)
     generation_recommendation: EventGraphGenerationRecommendation
     risk_flags: list[str] = Field(default_factory=list)
+
+
+class EventGraphProjectDraftRequest(BaseModel):
+    idea: EventGraphIdeaRequest
+    draft_title: Optional[str] = None
+    teacher_notes: list[str] = Field(default_factory=list)
+
+
+class EventGraphProjectDraftResponse(BaseModel):
+    idea_id: str
+    status: Literal["draft"]
+    files: list[str] = Field(default_factory=list)
+    positioning: EventGraphPositioningResponse
+    project_manifest: dict[str, Any]
+    package_files: dict[str, Any]
+    validation_preview: dict[str, Any]
