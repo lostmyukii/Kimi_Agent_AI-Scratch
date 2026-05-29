@@ -8,6 +8,7 @@ from backend.app.core.config import get_settings
 from backend.app.schemas.event_graph import (
     EventGraphProjectDraftExportResponse,
     EventGraphProjectDraftRequest,
+    EventGraphProjectDraftResponse,
 )
 from backend.app.services.event_graph_planner_service import generate_project_draft
 from backend.app.services.project_plugin_service import REQUIRED_PACKAGE_FILES
@@ -26,13 +27,11 @@ def _write_payload(path: Path, payload: Any) -> None:
     path.write_text(str(payload), encoding="utf-8")
 
 
-def export_project_draft_package(
-    idea_id: str,
-    request: EventGraphProjectDraftRequest,
+def write_project_draft_package(
+    draft: EventGraphProjectDraftResponse,
     output_root: Path | None = None,
     overwrite: bool = True,
 ) -> EventGraphProjectDraftExportResponse:
-    draft = generate_project_draft(idea_id, request)
     package_id = str(draft.project_manifest["package_id"])
     project_id = str(draft.project_manifest["project_id"])
     root = output_root or event_graph_draft_export_root()
@@ -45,7 +44,7 @@ def export_project_draft_package(
         _write_payload(package_dir / filename, draft.package_files[filename])
 
     export_manifest = {
-        "idea_id": idea_id,
+        "idea_id": draft.idea_id,
         "package_id": package_id,
         "project_id": project_id,
         "status": draft.status,
@@ -58,7 +57,7 @@ def export_project_draft_package(
     _write_payload(export_manifest_path, export_manifest)
 
     return EventGraphProjectDraftExportResponse(
-        idea_id=idea_id,
+        idea_id=draft.idea_id,
         package_id=package_id,
         project_id=project_id,
         status="draft",
@@ -68,3 +67,13 @@ def export_project_draft_package(
         files=list(REQUIRED_PACKAGE_FILES.keys()),
         validation_preview=draft.validation_preview,
     )
+
+
+def export_project_draft_package(
+    idea_id: str,
+    request: EventGraphProjectDraftRequest,
+    output_root: Path | None = None,
+    overwrite: bool = True,
+) -> EventGraphProjectDraftExportResponse:
+    draft = generate_project_draft(idea_id, request)
+    return write_project_draft_package(draft, output_root=output_root, overwrite=overwrite)

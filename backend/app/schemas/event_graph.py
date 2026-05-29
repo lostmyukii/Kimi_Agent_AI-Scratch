@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+from backend.app.schemas.common import ORMModel
 
 
 EventGraphTargetUse = Literal["classroom", "parent_showcase", "competition", "portfolio", "zongping"]
@@ -91,3 +94,34 @@ class EventGraphProjectDraftExportResponse(BaseModel):
     export_manifest_path: str
     files: list[str] = Field(default_factory=list)
     validation_preview: dict[str, Any]
+
+
+class EventGraphGeneratedProjectDraftCreateRequest(BaseModel):
+    draft: EventGraphProjectDraftRequest
+    created_by: str = "event_graph_planner"
+    overwrite_export: bool = True
+
+
+class EventGraphGeneratedProjectDraftRead(ORMModel):
+    draft_id: str
+    idea_id: str
+    package_id: str
+    project_id: str
+    title: str
+    age_band: str
+    slot_type: str
+    generation_mode: str
+    status: Literal["draft"]
+    lifecycle_stage: Literal["draft"]
+    package_dir: str
+    manifest_path: str
+    export_manifest_path: str
+    request_json: dict[str, Any] = Field(default_factory=dict)
+    positioning_json: dict[str, Any] = Field(default_factory=dict)
+    draft_payload_json: dict[str, Any] = Field(default_factory=dict)
+    validation_summary_json: dict[str, Any] = Field(default_factory=dict)
+    export_paths_json: dict[str, Any] = Field(default_factory=dict)
+    created_by: str
+    reviewed_by: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
