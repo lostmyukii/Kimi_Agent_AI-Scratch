@@ -79,3 +79,15 @@ class EventGraphProjectDraftResponse(BaseModel):
     project_manifest: dict[str, Any]
     package_files: dict[str, Any]
     validation_preview: dict[str, Any]
+
+
+class EventGraphProjectDraftExportResponse(BaseModel):
+    idea_id: str
+    package_id: str
+    project_id: str
+    status: Literal["draft"]
+    package_dir: str
+    manifest_path: str
+    export_manifest_path: str
+    files: list[str] = Field(default_factory=list)
+    validation_preview: dict[str, Any]
