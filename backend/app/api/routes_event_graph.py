@@ -14,6 +14,8 @@ from backend.app.schemas.event_graph import (
     EventGraphProjectDraftExportResponse,
     EventGraphProjectDraftRequest,
     EventGraphProjectDraftResponse,
+    EventGraphReviewRecordCreateRequest,
+    EventGraphReviewRecordRead,
 )
 from backend.app.services.event_graph_draft_export_service import export_project_draft_package
 from backend.app.services.event_graph_generated_draft_service import (
@@ -22,6 +24,11 @@ from backend.app.services.event_graph_generated_draft_service import (
     list_generated_project_drafts,
 )
 from backend.app.services.event_graph_planner_service import generate_project_draft, position_teacher_idea
+from backend.app.services.event_graph_review_service import (
+    create_project_graph_review_record,
+    get_project_graph_review_record,
+    list_project_graph_review_records,
+)
 
 router = APIRouter(prefix="/event-graph", tags=["event-graph"])
 
@@ -81,3 +88,40 @@ def get_event_graph_generated_project_draft(
         return get_generated_project_draft(db, draft_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/generated-project-drafts/{draft_id}/review-records", response_model=EventGraphReviewRecordRead)
+def create_event_graph_review_record(
+    draft_id: str,
+    payload: EventGraphReviewRecordCreateRequest,
+    db: Session = Depends(get_db),
+) -> EventGraphReviewRecordRead:
+    try:
+        return create_project_graph_review_record(db, draft_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/generated-project-drafts/{draft_id}/review-records", response_model=list[EventGraphReviewRecordRead])
+def list_event_graph_review_records(
+    draft_id: str,
+    review_stage: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> list[EventGraphReviewRecordRead]:
+    return list_project_graph_review_records(db, draft_id=draft_id, review_stage=review_stage, limit=limit)
+
+
+@router.get("/generated-project-drafts/{draft_id}/review-records/{review_id}", response_model=EventGraphReviewRecordRead)
+def get_event_graph_review_record(
+    draft_id: str,
+    review_id: str,
+    db: Session = Depends(get_db),
+) -> EventGraphReviewRecordRead:
+    try:
+        record = get_project_graph_review_record(db, review_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if record.draft_id != draft_id:
+        raise HTTPException(status_code=404, detail=f"审核记录不属于草案：{draft_id}")
+    return record

@@ -40,3 +40,23 @@ class GeneratedProjectDraft(Base):
     reviewed_by: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ProjectGraphReviewRecord(Base):
+    __tablename__ = "project_graph_review_records"
+
+    review_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    draft_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    package_id: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reviewer_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    reviewer_role: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    review_stage: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    decision: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    decision_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    required_changes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    graph_changes_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    status_flow_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    draft_status_before: Mapped[str] = mapped_column(String(40), default="draft", index=True)
+    draft_status_after: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)

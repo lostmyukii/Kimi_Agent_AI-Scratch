@@ -10,6 +10,8 @@ from backend.app.schemas.common import ORMModel
 
 EventGraphTargetUse = Literal["classroom", "parent_showcase", "competition", "portfolio", "zongping"]
 EventGraphGenerationMode = Literal["reuse_existing", "variant", "new_package"]
+EventGraphReviewStage = Literal["teacher_confirmation", "system_validation", "teaching_research_review"]
+EventGraphReviewDecision = Literal["approved", "changes_requested", "rejected", "teacher_confirmed", "system_validated"]
 EventGraphSlotType = Literal[
     "pre_remediation",
     "synchronous_carrier",
@@ -125,3 +127,31 @@ class EventGraphGeneratedProjectDraftRead(ORMModel):
     reviewed_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class EventGraphReviewRecordCreateRequest(BaseModel):
+    review_stage: EventGraphReviewStage
+    reviewer_id: str = Field(..., min_length=1)
+    reviewer_role: str = Field(..., min_length=1)
+    decision: EventGraphReviewDecision
+    decision_reason: str = Field(..., min_length=1)
+    required_changes: list[str] = Field(default_factory=list)
+    graph_changes_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class EventGraphReviewRecordRead(ORMModel):
+    review_id: str
+    draft_id: str
+    package_id: str
+    project_id: str
+    reviewer_id: str
+    reviewer_role: str
+    review_stage: str
+    decision: str
+    decision_reason: str
+    required_changes: list[str] = Field(default_factory=list)
+    graph_changes_json: dict[str, Any] = Field(default_factory=dict)
+    status_flow_json: list[str] = Field(default_factory=list)
+    draft_status_before: str
+    draft_status_after: str
+    created_at: datetime
