@@ -20,6 +20,8 @@ from backend.app.schemas.event_graph import (
     EventGraphProjectDraftResponse,
     EventGraphReviewRecordCreateRequest,
     EventGraphReviewRecordRead,
+    EventGraphTeacherIdeaSubmissionRequest,
+    EventGraphTeacherIdeaSubmissionResponse,
 )
 from backend.app.services.event_graph_draft_export_service import export_project_draft_package
 from backend.app.services.event_graph_generated_draft_service import (
@@ -34,6 +36,7 @@ from backend.app.services.event_graph_review_service import (
     get_project_graph_review_record,
     list_project_graph_review_records,
 )
+from backend.app.services.event_graph_teacher_submission_service import submit_teacher_project_idea
 
 router = APIRouter(prefix="/event-graph", tags=["event-graph"])
 
@@ -41,6 +44,14 @@ router = APIRouter(prefix="/event-graph", tags=["event-graph"])
 @router.post("/ideas/position", response_model=EventGraphPositioningResponse)
 def position_event_graph_idea(payload: EventGraphIdeaRequest) -> EventGraphPositioningResponse:
     return position_teacher_idea(payload)
+
+
+@router.post("/teacher-project-ideas", response_model=EventGraphTeacherIdeaSubmissionResponse)
+def submit_event_graph_teacher_project_idea(
+    payload: EventGraphTeacherIdeaSubmissionRequest,
+    db: Session = Depends(get_db),
+) -> EventGraphTeacherIdeaSubmissionResponse:
+    return submit_teacher_project_idea(db, payload)
 
 
 @router.post("/ideas/{idea_id}/generate-project-draft", response_model=EventGraphProjectDraftResponse)

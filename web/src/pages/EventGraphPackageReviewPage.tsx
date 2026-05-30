@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Lock, PackageOpen, RefreshCw, Search, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Brain, CheckCircle2, ClipboardCheck, Lock, PackageOpen, PlusCircle, RefreshCw, Search, Send, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -15,8 +15,10 @@ import type {
   AuthPermissionResponse,
   EventGraphGeneratedProjectDraft,
   EventGraphPackageValidationResult,
+  EventGraphPositioningResponse,
   EventGraphProjectPackageReviewResponse,
   EventGraphReviewRecord,
+  EventGraphTargetUse,
   ProjectPackageDetail,
   ProjectValidationResult,
 } from "@/types/api";
@@ -25,11 +27,30 @@ type ReviewSurface = "teacher" | "admin";
 type ValidationRow = EventGraphPackageValidationResult | ProjectValidationResult;
 
 const ageBands = ["", "L1", "L2", "L3", "L4", "L5"];
+const targetUses: Array<{ value: EventGraphTargetUse; label: string }> = [
+  { value: "classroom", label: "课堂项目" },
+  { value: "parent_showcase", label: "家长展示" },
+  { value: "competition", label: "竞赛包装" },
+  { value: "portfolio", label: "作品集" },
+  { value: "zongping", label: "综合评价" },
+];
 const reviewGateStages = [
   { stage: "teacher_confirmation", label: "教师确认", passDecisions: ["teacher_confirmed", "approved"] },
   { stage: "system_validation", label: "系统校验", passDecisions: ["system_validated", "approved"] },
   { stage: "teaching_research_review", label: "教研审核", passDecisions: ["approved"] },
 ];
+
+const defaultIdeaForm = {
+  ideaText: "我想给10岁孩子做一个能语音控制的送货小车项目",
+  draftTitle: "",
+  age: "10",
+  ageBand: "",
+  durationHours: "8",
+  targetUse: "classroom" as EventGraphTargetUse,
+  hardware: "Arduino、小车底盘、语音模块",
+  constraints: "只生成项目骨架，不给学生完整代码\n先让学生画流程图，再让AI给建议",
+  teacherNotes: "保留解释门\n先学生草稿再AI建议",
+};
 
 export function EventGraphPackageReviewPage({ surface }: { surface: ReviewSurface }) {
   const [auth, setAuth] = useState<AuthPermissionResponse | null>(null);
@@ -45,6 +66,10 @@ export function EventGraphPackageReviewPage({ surface }: { surface: ReviewSurfac
   const [packageDetail, setPackageDetail] = useState<ProjectPackageDetail | null>(null);
   const [reviewResult, setReviewResult] = useState<EventGraphProjectPackageReviewResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ideaForm, setIdeaForm] = useState(defaultIdeaForm);
+  const [positioningPreview, setPositioningPreview] = useState<EventGraphPositioningResponse | null>(null);
+  const [ideaBusy, setIdeaBusy] = useState(false);
+  const [ideaError, setIdeaError] = useState("");
 
   const canSubmitReview = Boolean(auth?.admin_tools_allowed);
   const selectedDraft = drafts.find((draft) => draft.draft_id === selectedDraftId) ?? drafts[0] ?? null;
@@ -133,6 +158,82 @@ export function EventGraphPackageReviewPage({ surface }: { surface: ReviewSurfac
     }
   }
 
+  function updateIdeaForm<K extends keyof typeof defaultIdeaForm>(key: K, value: (typeof defaultIdeaForm)[K]) {
+    setIdeaForm((current) => ({ ...current, [key]: value }));
+    setPositioningPreview(null);
+    setIdeaError("");
+  }
+
+  function buildIdeaPayload() {
+    const age = Number.parseInt(ideaForm.age, 10);
+    const durationHours = Number.parseInt(ideaForm.durationHours, 10);
+    return {
+      idea_text: ideaForm.ideaText.trim(),
+      age: Number.isFinite(age) ? age : undefined,
+      age_band: ideaForm.ageBand || undefined,
+      available_hardware: splitInputList(ideaForm.hardware),
+      duration_hours: Number.isFinite(durationHours) ? durationHours : undefined,
+      target_use: ideaForm.targetUse,
+      teacher_constraints: splitInputList(ideaForm.constraints),
+    };
+  }
+
+  async function previewTeacherIdea() {
+    const idea = buildIdeaPayload();
+    if (!idea.idea_text) {
+      setIdeaError("请先写下项目想法。");
+      return;
+    }
+    setIdeaBusy(true);
+    setIdeaError("");
+    try {
+      setPositioningPreview(await api.eventGraphPositionIdea(idea));
+      toast.success("事理图谱推理已生成");
+    } catch (err) {
+      const message = err instanceof Error ? readableApiError(err.message) : "推理失败";
+      setIdeaError(message);
+      toast.error(message);
+    } finally {
+      setIdeaBusy(false);
+    }
+  }
+
+  async function submitTeacherIdeaDraft() {
+    const idea = buildIdeaPayload();
+    if (!idea.idea_text) {
+      setIdeaError("请先写下项目想法。");
+      return;
+    }
+    if (!positioningPreview) {
+      setIdeaError("请先生成并确认事理图谱推理建议。");
+      return;
+    }
+    setIdeaBusy(true);
+    setIdeaError("");
+    try {
+      const result = await api.submitEventGraphTeacherProjectIdea({
+        idea,
+        draft_title: ideaForm.draftTitle.trim() || undefined,
+        teacher_notes: splitInputList(ideaForm.teacherNotes),
+        teacher_id: auth?.user_id || "teacher_ui",
+        teacher_confirmation_reason: "教师已确认事理图谱推理建议，提交进入草案队列。",
+      });
+      setDrafts((current) => [result.draft, ...current.filter((item) => item.draft_id !== result.draft.draft_id)]);
+      setSelectedDraftId(result.draft.draft_id);
+      setReviewRecords([result.teacher_confirmation]);
+      setReviewResult(null);
+      setPackageDetail(null);
+      setPositioningPreview(result.positioning);
+      toast.success("草案已加入审批队列");
+    } catch (err) {
+      const message = err instanceof Error ? readableApiError(err.message) : "草案提交失败";
+      setIdeaError(message);
+      toast.error(message);
+    } finally {
+      setIdeaBusy(false);
+    }
+  }
+
   if (loading) return <div className="page-shell"><LoadingState label="草案队列加载中" /></div>;
   if (error) return <div className="page-shell"><ErrorState message={error} onRetry={() => void loadDrafts()} /></div>;
 
@@ -155,6 +256,88 @@ export function EventGraphPackageReviewPage({ surface }: { surface: ReviewSurfac
           </div>
         }
       />
+
+      {surface === "teacher" ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  <PlusCircle className="h-4 w-4" />
+                  New Draft
+                </div>
+                <h2 className="mt-2 text-xl font-semibold text-ink">提报新项目想法</h2>
+                <p className="mt-1 text-sm text-muted">先生成事理图谱推理建议，再由教师确认加入草案审批队列。</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => void previewTeacherIdea()} disabled={ideaBusy || !ideaForm.ideaText.trim()}>
+                  <Brain className="size-4" />生成推理建议
+                </Button>
+                <Button onClick={() => void submitTeacherIdeaDraft()} disabled={ideaBusy || !positioningPreview}>
+                  <Send className="size-4" />确认加入队列
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-5">
+            {ideaError ? <WarningLine value={ideaError} /> : null}
+            <div className="grid gap-3 lg:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
+              <label className="grid gap-2 text-sm font-medium text-ink lg:col-span-2">
+                项目想法
+                <textarea
+                  className="min-h-[116px] rounded-md border border-line bg-white p-3 text-sm leading-6 outline-none focus:border-ink"
+                  value={ideaForm.ideaText}
+                  onChange={(event) => updateIdeaForm("ideaText", event.target.value)}
+                  placeholder="比如：我想给10岁孩子做一个能语音控制的送货小车项目"
+                />
+              </label>
+              <div className="grid gap-3">
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  草案标题
+                  <input className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" value={ideaForm.draftTitle} onChange={(event) => updateIdeaForm("draftTitle", event.target.value)} placeholder="可选" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  年龄
+                  <input className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" value={ideaForm.age} onChange={(event) => updateIdeaForm("age", event.target.value)} inputMode="numeric" placeholder="10" />
+                </label>
+              </div>
+              <div className="grid gap-3">
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  阶段
+                  <select className="h-10 rounded-md border border-line bg-white px-3 text-sm" value={ideaForm.ageBand} onChange={(event) => updateIdeaForm("ageBand", event.target.value)}>
+                    {ageBands.map((item) => <option key={item || "auto"} value={item}>{item || "自动判断"}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  课时
+                  <input className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" value={ideaForm.durationHours} onChange={(event) => updateIdeaForm("durationHours", event.target.value)} inputMode="numeric" placeholder="8" />
+                </label>
+              </div>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              <label className="grid gap-2 text-sm font-medium text-ink">
+                目标用途
+                <select className="h-10 rounded-md border border-line bg-white px-3 text-sm" value={ideaForm.targetUse} onChange={(event) => updateIdeaForm("targetUse", event.target.value as EventGraphTargetUse)}>
+                  {targetUses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-ink">
+                可用硬件
+                <input className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" value={ideaForm.hardware} onChange={(event) => updateIdeaForm("hardware", event.target.value)} placeholder="Arduino、小车底盘、语音模块" />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-ink">
+                教师备注
+                <input className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" value={ideaForm.teacherNotes} onChange={(event) => updateIdeaForm("teacherNotes", event.target.value)} placeholder="一行一条或逗号分隔" />
+              </label>
+            </div>
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              教师约束
+              <textarea className="min-h-[76px] rounded-md border border-line bg-white p-3 text-sm leading-6 outline-none focus:border-ink" value={ideaForm.constraints} onChange={(event) => updateIdeaForm("constraints", event.target.value)} placeholder="例如：只生成项目骨架，不给完整代码" />
+            </label>
+            {positioningPreview ? <PositioningPreview preview={positioningPreview} /> : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <MetricCard label="草案" value={String(filteredDrafts.length)} note="当前筛选" />
@@ -343,6 +526,39 @@ function filterDrafts(drafts: EventGraphGeneratedProjectDraft[], query: string, 
   });
 }
 
+function PositioningPreview({ preview }: { preview: EventGraphPositioningResponse }) {
+  const chain = preview.knowledge_chain;
+  return (
+    <div className="rounded-md border border-line bg-canvas p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">事理图谱推理建议</p>
+          <p className="mt-1 text-sm leading-6 text-muted">{preview.stage_decision.reason}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge level={preview.stage_decision.age_band}>{preview.stage_decision.age_band}</Badge>
+          <Badge>{slotLabel(preview.stage_decision.slot_type)}</Badge>
+          <Badge>{modeLabel(preview.generation_recommendation.mode)}</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <InfoTile label="前置知识" value={chain.before.join(" / ") || "-"} />
+        <InfoTile label="核心知识" value={chain.core.join(" / ") || "-"} />
+        <InfoTile label="后续衔接" value={chain.after.join(" / ") || "-"} />
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <InfoTile label="候选已有项目" value={preview.candidate_existing_project_keywords.join(" / ") || "-"} />
+        <InfoTile label="生成理由" value={preview.generation_recommendation.reason} />
+        <InfoTile label="风险提示" value={preview.risk_flags.length ? preview.risk_flags.join(" / ") : "无"} />
+      </div>
+      <div className="mt-3 rounded-md border border-line bg-white p-3 text-sm leading-6 text-muted">
+        <span className="font-semibold text-ink">审核要求：</span>
+        {preview.generation_recommendation.required_review.length ? preview.generation_recommendation.required_review.join(" / ") : "教师确认、系统校验、教研审核"}
+      </div>
+    </div>
+  );
+}
+
 function buildGateRows(records: EventGraphReviewRecord[]) {
   return reviewGateStages.map((gate) => {
     const record = records.find((item) => item.review_stage === gate.stage);
@@ -352,6 +568,13 @@ function buildGateRows(records: EventGraphReviewRecord[]) {
     );
     return { ...gate, record, passed };
   });
+}
+
+function splitInputList(value: string): string[] {
+  return value
+    .split(/[\n,，、]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function DraftValidationPreview({ draft }: { draft: EventGraphGeneratedProjectDraft }) {

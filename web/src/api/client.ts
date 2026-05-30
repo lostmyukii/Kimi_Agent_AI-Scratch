@@ -107,9 +107,13 @@ import type {
   EvaluationRunRequest,
   EvaluationRunResponse,
   EventGraphGeneratedProjectDraft,
+  EventGraphIdeaRequest,
+  EventGraphPositioningResponse,
   EventGraphProjectPackageReviewPayload,
   EventGraphProjectPackageReviewResponse,
   EventGraphReviewRecord,
+  EventGraphTeacherIdeaSubmissionPayload,
+  EventGraphTeacherIdeaSubmissionResponse,
   GraphEdge,
   GraphNeighborsResponse,
   GroupCapabilityMapResponse,
@@ -433,6 +437,16 @@ export const api = {
     request<ProjectPackage[]>(withParams("/api/admin/project-packages", params)),
   projectPlugin: (packageId: string) =>
     request<ProjectPackageDetail>(`/api/admin/project-packages/${packageId}`),
+  eventGraphPositionIdea: (payload: EventGraphIdeaRequest) =>
+    request<EventGraphPositioningResponse>("/api/event-graph/ideas/position", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  submitEventGraphTeacherProjectIdea: (payload: EventGraphTeacherIdeaSubmissionPayload) =>
+    request<EventGraphTeacherIdeaSubmissionResponse>("/api/event-graph/teacher-project-ideas", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   eventGraphGeneratedProjectDrafts: (params: Record<string, string | number | undefined> = {}) =>
     request<EventGraphGeneratedProjectDraft[]>(withParams("/api/event-graph/generated-project-drafts", params)),
   eventGraphGeneratedProjectDraft: (draftId: string) =>

@@ -2042,6 +2042,58 @@ export interface ProjectRAGIndexJob {
   completed_at: string | null;
 }
 
+export type EventGraphTargetUse = "classroom" | "parent_showcase" | "competition" | "portfolio" | "zongping";
+export type EventGraphGenerationMode = "reuse_existing" | "variant" | "new_package";
+export type EventGraphSlotType = "pre_remediation" | "synchronous_carrier" | "extension_challenge" | "review_repair" | "competition_packaging" | "zongping_portfolio";
+
+export interface EventGraphIdeaRequest {
+  idea_text: string;
+  age?: number;
+  age_band?: string;
+  current_project_id?: string;
+  known_knowledge_point_ids?: string[];
+  available_hardware?: string[];
+  duration_hours?: number;
+  target_use?: EventGraphTargetUse;
+  teacher_constraints?: string[];
+}
+
+export interface EventGraphStageDecision {
+  age_band: string;
+  slot_type: EventGraphSlotType | string;
+  confidence: number;
+  reason: string;
+}
+
+export interface EventGraphKnowledgeChain {
+  before: string[];
+  core: string[];
+  after: string[];
+}
+
+export interface EventGraphInsertionSlot {
+  slot_type: EventGraphSlotType | string;
+  position: string;
+  anchor_project_keywords: string[];
+  score: number;
+  reason: string;
+}
+
+export interface EventGraphGenerationRecommendation {
+  mode: EventGraphGenerationMode | string;
+  reason: string;
+  required_review: string[];
+}
+
+export interface EventGraphPositioningResponse {
+  stage_decision: EventGraphStageDecision;
+  knowledge_chain: EventGraphKnowledgeChain;
+  insertion_slots: EventGraphInsertionSlot[];
+  candidate_existing_project_keywords: string[];
+  generation_recommendation: EventGraphGenerationRecommendation;
+  risk_flags: string[];
+}
+
 export interface EventGraphGeneratedProjectDraft {
   draft_id: string;
   idea_id: string;
@@ -2065,6 +2117,16 @@ export interface EventGraphGeneratedProjectDraft {
   reviewed_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface EventGraphTeacherIdeaSubmissionPayload {
+  idea: EventGraphIdeaRequest;
+  idea_id?: string;
+  draft_title?: string;
+  teacher_notes?: string[];
+  teacher_id?: string;
+  teacher_confirmation_reason?: string;
+  overwrite_export?: boolean;
 }
 
 export type EventGraphReviewStage = "teacher_confirmation" | "system_validation" | "teaching_research_review";
@@ -2112,6 +2174,12 @@ export interface EventGraphProjectPackageReviewResponse {
   submitted_for_review: boolean;
   review_gate: Record<string, unknown>;
   rag_job_count: number;
+}
+
+export interface EventGraphTeacherIdeaSubmissionResponse {
+  draft: EventGraphGeneratedProjectDraft;
+  teacher_confirmation: EventGraphReviewRecord;
+  positioning: EventGraphPositioningResponse;
 }
 
 export interface ProjectPackage {

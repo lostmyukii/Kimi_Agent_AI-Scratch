@@ -129,6 +129,16 @@ class EventGraphGeneratedProjectDraftRead(ORMModel):
     updated_at: datetime
 
 
+class EventGraphTeacherIdeaSubmissionRequest(BaseModel):
+    idea: EventGraphIdeaRequest
+    idea_id: Optional[str] = None
+    draft_title: Optional[str] = None
+    teacher_notes: list[str] = Field(default_factory=list)
+    teacher_id: str = Field(default="teacher_ui", min_length=1)
+    teacher_confirmation_reason: str = Field(default="教师确认事理图谱推理建议，提交进入草案队列。", min_length=1)
+    overwrite_export: bool = True
+
+
 class EventGraphReviewRecordCreateRequest(BaseModel):
     review_stage: EventGraphReviewStage
     reviewer_id: str = Field(..., min_length=1)
@@ -155,6 +165,12 @@ class EventGraphReviewRecordRead(ORMModel):
     draft_status_before: str
     draft_status_after: str
     created_at: datetime
+
+
+class EventGraphTeacherIdeaSubmissionResponse(BaseModel):
+    draft: EventGraphGeneratedProjectDraftRead
+    teacher_confirmation: EventGraphReviewRecordRead
+    positioning: EventGraphPositioningResponse
 
 
 class EventGraphProjectPackageReviewRequest(BaseModel):
